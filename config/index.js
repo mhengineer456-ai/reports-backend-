@@ -24,7 +24,8 @@ module.exports = {
     lotLogs: process.env.REACT_APP_LOT_LOGS_SPREADSHEET_ID || "1dnukAAjyZy-W6oiRvT-6rcyTE5Rlu3u4GJqVXyN382I",
     credentials: process.env.REACT_APP_CREDENTIALS_SPREADSHEET_ID || "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I",
     knitting: process.env.REACT_APP_KNITTING_SPREADSHEET_ID || "1yHVieyNb7A5rds3oBEaUlfxxgG04QetLpb8T9g_xQPw",
-    embPrintRemarks: process.env.REACT_APP_EMB_PRINT_REMARKS_SPREADSHEET_ID || "1ZAAVyKqAqQkBvwFv19pu1WT3g227XJ8ZpM_JSb_nMd8"
+    embPrintRemarks: process.env.REACT_APP_EMB_PRINT_REMARKS_SPREADSHEET_ID || "1ZAAVyKqAqQkBvwFv19pu1WT3g227XJ8ZpM_JSb_nMd8",
+    barcode: process.env.REACT_APP_BARCODE_SPREADSHEET_ID || "1dOCjNFwaAel5qun0_ZJVIGmREqjI76CJBBFIjM3NHv8"
   },
   lotLogsWebhookUrl: process.env.REACT_APP_LOT_LOGS_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycby7j4mUEdmUM7TdFMPsonig_elsdYsRHb389ZPGka7yRYxDlOnZRFto_oI-Uqp0vVIJ/exec",
   embPrintRemarksWebhookUrl: process.env.REACT_APP_EMB_PRINT_REMARKS_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycbyMDwX4P8mUmpkodGdoHQQvFMqW4z0LWvqeWFByh4pAF3GFDXrlLpGV9M7dHqHLB-bZ/exec",

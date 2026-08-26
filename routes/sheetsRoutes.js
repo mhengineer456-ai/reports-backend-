@@ -103,4 +103,69 @@ router.post("/save-emb-print-remark", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/sheets/barcode
+ * Fetch raw or parsed Barcode Data (LotBarcodeData)
+ */
+router.get("/barcode", async (req, res, next) => {
+  try {
+    const { refresh } = req.query;
+    const barcodeSpreadsheetId = config.spreadsheetIds.barcode || "1dOCjNFwaAel5qun0_ZJVIGmREqjI76CJBBFIjM3NHv8";
+    const range = req.query.range || "LotBarcodeData!A:Z";
+    const forceRefresh = refresh === "true" || refresh === "1";
+
+    const result = await getSheetValues(barcodeSpreadsheetId, range, forceRefresh);
+    res.json({
+      success: true,
+      spreadsheetId: barcodeSpreadsheetId,
+      range,
+      source: result.source,
+      rowCount: result.values.length,
+      values: result.values
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/sheets/packing-complete-lots
+ * Fetches completed packing lots with packing complete dates
+ */
+router.get("/packing-complete-lots", async (req, res, next) => {
+  try {
+    const { refresh } = req.query;
+    const forceRefresh = refresh === "true" || refresh === "1";
+
+    const mainId = config.spreadsheetIds.main || "1Hj3JeJEKB43aYYWv8gk2UhdU6BWuEQfCg5pBlTdBMNA";
+    const issuesId = config.spreadsheetIds.issues || "1uo14nKO_yHu4AJ2rOgaJajuprcinj6xw1AUMFJ6_zYM";
+    const barcodeId = config.spreadsheetIds.barcode || "1dOCjNFwaAel5qun0_ZJVIGmREqjI76CJBBFIjM3NHv8";
+    const rawpackId = config.spreadsheetIds.rawpack || "1xD8Uy1lUgvNTQ2RGRBI4ZjOrozbinUPRq2_UfIplP98";
+
+    const [indexRes, issuesRes, barcodeRes, rawpackRes] = await Promise.all([
+      getSheetValues(mainId, "Index!A:AA", forceRefresh).catch(() => ({ values: [] })),
+      getSheetValues(issuesId, "Issues!A:R", forceRefresh).catch(() => ({ values: [] })),
+      getSheetValues(barcodeId, "LotBarcodeData!A:Z", forceRefresh).catch(() => ({ values: [] })),
+      getSheetValues(rawpackId, "RAWPACK!A:ZZ", forceRefresh).catch(() => ({ values: [] }))
+    ]);
+
+    res.json({
+      success: true,
+      indexCount: indexRes.values.length,
+      issuesCount: issuesRes.values.length,
+      barcodeCount: barcodeRes.values.length,
+      rawpackCount: rawpackRes.values.length,
+      data: {
+        indexRows: indexRes.values,
+        issuesRows: issuesRes.values,
+        barcodeRows: barcodeRes.values,
+        rawpackRows: rawpackRes.values
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
+
