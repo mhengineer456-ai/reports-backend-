@@ -8,6 +8,7 @@ const healthRoutes = require("./routes/healthRoutes");
 const sheetsRoutes = require("./routes/sheetsRoutes");
 const authRoutes = require("./routes/authRoutes");
 const logsRoutes = require("./routes/logsRoutes");
+const timelineRoutes = require("./routes/timelineRoutes");
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use("/api/health", healthRoutes);
 app.use("/api/sheets", sheetsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/logs", logsRoutes);
+app.use("/api/timeline", timelineRoutes);
 
 // Root route
 app.get("/", (req, res) => {
