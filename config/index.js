@@ -25,9 +25,11 @@ module.exports = {
     credentials: process.env.REACT_APP_CREDENTIALS_SPREADSHEET_ID || "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I",
     knitting: process.env.REACT_APP_KNITTING_SPREADSHEET_ID || "1yHVieyNb7A5rds3oBEaUlfxxgG04QetLpb8T9g_xQPw",
     embPrintRemarks: process.env.REACT_APP_EMB_PRINT_REMARKS_SPREADSHEET_ID || "1ZAAVyKqAqQkBvwFv19pu1WT3g227XJ8ZpM_JSb_nMd8",
-    barcode: process.env.REACT_APP_BARCODE_SPREADSHEET_ID || "1dOCjNFwaAel5qun0_ZJVIGmREqjI76CJBBFIjM3NHv8"
+    barcode: process.env.REACT_APP_BARCODE_SPREADSHEET_ID || "1dOCjNFwaAel5qun0_ZJVIGmREqjI76CJBBFIjM3NHv8",
+    holdLots: process.env.REACT_APP_HOLD_LOTS_SPREADSHEET_ID || "1uBelbe44z2lUXngctvk3J31WBiW1v07Nlgx5jFlyIOs"
   },
   lotLogsWebhookUrl: process.env.REACT_APP_LOT_LOGS_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycby7j4mUEdmUM7TdFMPsonig_elsdYsRHb389ZPGka7yRYxDlOnZRFto_oI-Uqp0vVIJ/exec",
   embPrintRemarksWebhookUrl: process.env.REACT_APP_EMB_PRINT_REMARKS_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycbyMDwX4P8mUmpkodGdoHQQvFMqW4z0LWvqeWFByh4pAF3GFDXrlLpGV9M7dHqHLB-bZ/exec",
+  holdLotsWebhookUrl: process.env.REACT_APP_HOLD_LOTS_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycbwhfQMI2uYzDc-VBoYbk6McZCArUShh-3xNE_qwV4MFEb4C53dRTxPpifjRp2sHoVd_Yg/exec",
   cacheTTL: parseInt(process.env.CACHE_TTL || "60", 10) // Cache TTL in seconds (default 60s)
 };

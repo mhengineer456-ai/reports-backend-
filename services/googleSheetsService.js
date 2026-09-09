@@ -3,11 +3,20 @@ const axios = require("axios");
 const NodeCache = require("node-cache");
 const config = require("../config");
 
-// Initialize in-memory cache with standard TTL
-const sheetsCache = new NodeCache({ stdTTL: config.cacheTTL, checkperiod: 120 });
+// Initialize in-memory cache with 300s (5 min) TTL to prevent Google Sheets 429 rate limits
+const cacheTTL = config.cacheTTL && config.cacheTTL > 60 ? config.cacheTTL : 300;
+const sheetsCache = new NodeCache({ stdTTL: cacheTTL, checkperiod: 120 });
+
+// Map to deduplicate concurrent in-flight requests for the same spreadsheet range
+const inFlightRequests = new Map();
 
 /**
- * Fetch spreadsheet range values with caching support
+ * Sleep helper for retry backoff
+ */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Fetch spreadsheet range values with caching, deduplication & 429 retry
  * @param {string} spreadsheetId - The Google Spreadsheet ID
  * @param {string} range - Range string (e.g. "Index!A1:Z100" or "JobOrder")
  * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
@@ -19,6 +28,7 @@ async function getSheetValues(spreadsheetId, range, forceRefresh = false) {
 
   const cacheKey = `${spreadsheetId}:${range}`;
 
+  // 1. Return from cache if available and not forced
   if (!forceRefresh) {
     const cachedData = sheetsCache.get(cacheKey);
     if (cachedData) {
@@ -26,33 +36,77 @@ async function getSheetValues(spreadsheetId, range, forceRefresh = false) {
     }
   }
 
-  const encodedRange = encodeURIComponent(range);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?key=${config.googleApiKey}`;
+  // 2. Request deduplication: if identical request is already in-flight, await it
+  if (inFlightRequests.has(cacheKey)) {
+    try {
+      const values = await inFlightRequests.get(cacheKey);
+      return { source: "deduplicated", values };
+    } catch (e) {
+      // Continue to fetch on error
+    }
+  }
+
+  const fetchPromise = (async () => {
+    const encodedRange = encodeURIComponent(range);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?key=${config.googleApiKey}`;
+
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        const response = await axios.get(url, { timeout: 45000 });
+        const values = response.data.values || [];
+
+        // Cache successful response
+        sheetsCache.set(cacheKey, values);
+        return values;
+      } catch (error) {
+        const isRateLimit = error.response && error.response.status === 429;
+        const isNotFound = error.response && (error.response.status === 400 || error.response.status === 404);
+
+        if (isRateLimit && attempts < maxAttempts) {
+          const waitTime = attempts * 1500 + Math.floor(Math.random() * 500);
+          console.warn(`[Rate Limit 429] Retrying [${spreadsheetId} - ${range}] in ${waitTime}ms (Attempt ${attempts}/${maxAttempts})...`);
+          await sleep(waitTime);
+          continue;
+        }
+
+        console.error(`Google Sheets API Error [${spreadsheetId} - ${range}]:`, error.message);
+
+        // Fallback to stale cache if available
+        const staleData = sheetsCache.get(cacheKey);
+        if (staleData) {
+          console.warn(`[Fallback] Serving stale cache for [${spreadsheetId} - ${range}]`);
+          return staleData;
+        }
+
+        // Graceful empty fallback on missing tab
+        if (isNotFound) {
+          console.warn(`[Graceful Fallback] Returning empty values for [${spreadsheetId} - ${range}]`);
+          return [];
+        }
+
+        // Graceful empty fallback on persistent rate limit to avoid breaking UI
+        if (isRateLimit) {
+          console.warn(`[Quota Fallback] Rate limit reached. Returning empty values gracefully.`);
+          return [];
+        }
+
+        throw new Error(`Failed to fetch sheet values: ${error.response?.data?.error?.message || error.message}`);
+      }
+    }
+    return [];
+  })();
+
+  inFlightRequests.set(cacheKey, fetchPromise);
 
   try {
-    const response = await axios.get(url);
-    const values = response.data.values || [];
-    
-    // Store in cache
-    sheetsCache.set(cacheKey, values);
-
+    const values = await fetchPromise;
     return { source: "network", values };
-  } catch (error) {
-    console.error(`Google Sheets API Error [${spreadsheetId} - ${range}]:`, error.message);
-    
-    // Fallback to stale cache if available
-    const staleData = sheetsCache.get(cacheKey);
-    if (staleData) {
-      return { source: "stale_cache", values: staleData, error: error.message };
-    }
-
-    // Handle missing tabs or unparsed ranges gracefully for new/blank sheets
-    if (error.response && (error.response.status === 400 || error.response.status === 404)) {
-      console.warn(`[Graceful Fallback] Returning empty values for missing/unparsed range [${spreadsheetId} - ${range}]`);
-      return { source: "empty_fallback", values: [] };
-    }
-
-    throw new Error(`Failed to fetch sheet values: ${error.response?.data?.error?.message || error.message}`);
+  } finally {
+    inFlightRequests.delete(cacheKey);
   }
 }
 
