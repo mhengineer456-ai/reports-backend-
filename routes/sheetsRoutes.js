@@ -270,80 +270,182 @@ router.get("/cancelled-lots", async (req, res, next) => {
 
 /**
  * GET /api/sheets/hold-lots
- * Fetches all hold lots from the dedicated Hold Lots Spreadsheet (1uBelbe44z2lUXngctvk3J31WBiW1v07Nlgx5jFlyIOs)
+ * Fetches all hold lots from the dedicated Hold Lots Spreadsheet (1oBetbe44z2lUXngctvk3J31WBiWTv07NIgx5jFlylOs)
+ */
+/**
+ * GET /api/sheets/hold-lots
+ * Fetches all hold lots from the dedicated Hold Lots Spreadsheet (1oBetbe44z2lUXngctvk3J31WBiWTv07NIgx5jFlylOs)
  */
 router.get("/hold-lots", async (req, res, next) => {
   try {
     const { refresh, department } = req.query;
     const forceRefresh = refresh === "true" || refresh === "1";
-    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1uBelbe44z2lUXngctvk3J31WBiW1v07Nlgx5jFlyIOs";
+    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1oBetbe44z2lUXngctvk3J31WBiWTv07NIgx5jFlylOs";
     
-    // Choose tab: either specific department or 'All Holds'
-    let tabName = "All Holds";
+    // Candidate tab names to check
+    const candidateTabs = [
+      "All Holds",
+      "Sheet1",
+      "Stitching",
+      "Cutting",
+      "Embroidery",
+      "Printing",
+      "Washing",
+      "Finishing",
+      "Packing",
+      "Hold lot",
+      "Hold Lot",
+      "Hold Lots",
+      "Hold lots",
+      "Hold"
+    ];
+
     if (department && department.trim()) {
-      tabName = department.trim().replace(/Department/gi, "").trim();
-    }
-    const range = `${tabName}!A1:U2000`;
-
-    const result = await getSheetValues(holdSpreadsheetId, range, forceRefresh).catch(async () => {
-      // Fallback to Sheet1 or All Holds
-      return await getSheetValues(holdSpreadsheetId, "Sheet1!A1:U2000", forceRefresh).catch(() => ({ values: [] }));
-    });
-
-    const rows = result.values || [];
-    if (rows.length <= 1) {
-      return res.json({ success: true, count: 0, data: [], headers: [] });
+      const cleanDept = department.trim().replace(/Department/gi, "").trim();
+      candidateTabs.unshift(cleanDept);
     }
 
-    const headers = rows[0].map((h) => String(h || "").trim());
-    const normalize = (s) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-
-    const headerMap = {};
-    headers.forEach((h, idx) => {
-      headerMap[normalize(h)] = idx;
+    // Deduplicate candidate tabs
+    const uniqueTabs = Array.from(new Set(candidateTabs));
+    
+    // Fetch from all potential tabs in parallel
+    const tabPromises = uniqueTabs.map(async (tab) => {
+      try {
+        const range = `${tab}!A1:Z5000`;
+        const resData = await getSheetValues(holdSpreadsheetId, range, forceRefresh);
+        const rows = resData.values || [];
+        if (rows.length > 1) {
+          return { tab, rows, source: resData.source };
+        }
+      } catch (err) {
+        // Silently skip tabs that don't exist
+      }
+      return null;
     });
 
-    const getVal = (row, key) => {
-      const idx = headerMap[normalize(key)];
-      return idx !== undefined && row[idx] !== undefined ? String(row[idx]).trim() : "";
-    };
+    const results = (await Promise.all(tabPromises)).filter(Boolean);
 
-    const holds = [];
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || row.length === 0 || !row[0]) continue;
+    const holdsMap = new Map();
+    let allHeaders = [];
 
-      holds.push({
-        timestamp: getVal(row, "Timestamp") || row[0],
-        id: getVal(row, "Hold ID") || row[1] || `HOLD-${i}`,
-        department: getVal(row, "Department") || row[2],
-        lotNumber: getVal(row, "Lot Number") || row[3],
-        jobOrderNo: getVal(row, "Job Order No") || row[4],
-        date: getVal(row, "PO Date") || row[5],
-        partyName: getVal(row, "Party Name") || row[6],
-        brand: getVal(row, "Brand") || row[7],
-        style: getVal(row, "Style") || row[8],
-        fabric: getVal(row, "Fabric") || row[9],
-        quantity: getVal(row, "Quantity") || row[10],
-        unit: getVal(row, "Unit") || row[11],
-        shade: getVal(row, "Shade") || row[12],
-        size: getVal(row, "Size") || row[13],
-        reason: getVal(row, "Hold Reason") || row[14],
-        holdBy: getVal(row, "Hold By") || row[15],
-        approvedBy: getVal(row, "Approved By") || row[16],
-        priority: getVal(row, "Priority") || row[17],
-        status: getVal(row, "Status") || row[18] || "ON HOLD",
-        releasedAt: getVal(row, "Released At") || row[19] || "",
-        releasedBy: getVal(row, "Released By") || row[20] || ""
+    for (const result of results) {
+      const rows = result.rows;
+      if (!rows || rows.length <= 1) continue;
+
+      const headers = rows[0].map((h) => String(h || "").trim());
+      if (allHeaders.length === 0) allHeaders = headers;
+
+      const normalize = (s) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const headerMap = {};
+      headers.forEach((h, idx) => {
+        headerMap[normalize(h)] = idx;
       });
+
+      const getVal = (row, key) => {
+        const idx = headerMap[normalize(key)];
+        return idx !== undefined && row[idx] !== undefined ? String(row[idx]).trim() : "";
+      };
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+
+        // Extract lot number
+        let lotNo = getVal(row, "Lot Number") || getVal(row, "Lot No") || getVal(row, "Lot");
+        if (!lotNo && row[3]) lotNo = String(row[3]).trim();
+        // If row doesn't have lot number or timestamp or id, skip
+        if (!lotNo && !row[0] && !row[1]) continue;
+        if (String(lotNo).toLowerCase() === "lot number" || String(row[0]).toLowerCase() === "timestamp") continue;
+
+        let holdId = getVal(row, "Hold ID") || getVal(row, "ID") || row[1] || `HOLD-${i}`;
+        let dept = getVal(row, "Department") || getVal(row, "Dept") || row[2] || result.tab;
+        let jobOrderNo = getVal(row, "Job Order No") || getVal(row, "JO") || row[4] || "—";
+        let date = getVal(row, "PO Date") || getVal(row, "Date") || row[5] || "";
+        let partyName = getVal(row, "Party Name") || getVal(row, "Party") || row[6] || "—";
+        let brand = getVal(row, "Brand") || row[7] || "—";
+        let style = getVal(row, "Style") || row[8] || "—";
+        let fabric = getVal(row, "Fabric") || row[9] || "—";
+        let quantity = getVal(row, "Quantity") || getVal(row, "Qty") || row[10] || "0";
+        let unit = getVal(row, "Unit") || row[11] || "PCS";
+        let shade = getVal(row, "Shade") || getVal(row, "Color") || row[12] || "—";
+        let size = getVal(row, "Size") || row[13] || "—";
+        let reason = getVal(row, "Hold Reason") || getVal(row, "Reason") || getVal(row, "Remarks") || row[14] || "";
+        let location = getVal(row, "Location") || getVal(row, "Hold Location") || getVal(row, "Placement") || getVal(row, "Floor") || "";
+        let holdBy = getVal(row, "Hold By") || getVal(row, "Held By") || "";
+        let approvedBy = getVal(row, "Approved By") || getVal(row, "Approval By") || "";
+        let priority = getVal(row, "Priority") || getVal(row, "Urgency") || "";
+        let status = getVal(row, "Status") || "";
+        let releasedAt = getVal(row, "Released At") || getVal(row, "Release Date") || "";
+        let releasedBy = getVal(row, "Released By") || getVal(row, "Release By") || "";
+
+        // Heuristic fallback for shifted columns (e.g., when Location/Floor is between Reason and Hold By)
+        for (let colIdx = 14; colIdx < row.length; colIdx++) {
+          const val = String(row[colIdx] || "").trim();
+          if (!val) continue;
+          const valUpper = val.toUpperCase();
+          if (valUpper === "ON HOLD" || valUpper === "RELEASED" || valUpper === "HOLD" || valUpper === "ACTIVE") {
+            if (!status || status === "ON HOLD") status = valUpper === "RELEASED" ? "RELEASED" : "ON HOLD";
+          } else if (
+            valUpper.includes("ALERT") ||
+            valUpper.includes("STANDARD") ||
+            valUpper.includes("CRITICAL") ||
+            valUpper.includes("URGENT") ||
+            valUpper.includes("HIGH") ||
+            valUpper.includes("NORMAL")
+          ) {
+            if (!priority) priority = val;
+          } else if (valUpper.includes("FLOOR") || valUpper.includes("FLR") || valUpper.includes("RACK") || valUpper.includes("TABLE")) {
+            if (!location) location = val;
+          }
+        }
+
+        if (!location && row[15]) location = String(row[15]).trim();
+        if (!holdBy && row[16]) holdBy = String(row[16]).trim();
+        if (!approvedBy && row[17]) approvedBy = String(row[17]).trim();
+        if (!priority) priority = row[18] ? String(row[18]).trim() : "Standard Update";
+        if (!status) status = row[19] ? String(row[19]).trim() : "ON HOLD";
+
+        const cleanStatus = status.toUpperCase().includes("HOLD") ? "ON HOLD" : "RELEASED";
+
+        const key = `${holdId}_${lotNo}`.toLowerCase();
+        if (!holdsMap.has(key)) {
+          holdsMap.set(key, {
+            id: holdId,
+            timestamp: getVal(row, "Timestamp") || row[0] || "",
+            department: dept,
+            lotNumber: lotNo,
+            jobOrderNo: jobOrderNo,
+            date: date,
+            poDate: date,
+            partyName: partyName,
+            brand: brand,
+            style: style,
+            fabric: fabric,
+            quantity: quantity,
+            unit: unit,
+            shade: shade,
+            size: size,
+            reason: reason,
+            location: location || "—",
+            holdBy: holdBy || "—",
+            approvedBy: approvedBy || "—",
+            priority: priority || "Standard Update",
+            status: cleanStatus,
+            releasedAt: releasedAt,
+            releasedBy: releasedBy,
+            tabOrigin: result.tab
+          });
+        }
+      }
     }
+
+    const allHolds = Array.from(holdsMap.values());
 
     res.json({
       success: true,
-      count: holds.length,
-      source: result.source,
-      data: holds.reverse(),
-      headers: headers
+      count: allHolds.length,
+      data: allHolds.reverse(),
+      headers: allHeaders
     });
   } catch (error) {
     next(error);
@@ -367,7 +469,7 @@ router.post("/hold-lot", async (req, res, next) => {
     }
 
     // Invalidate cached hold lots range
-    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1uBelbe44z2lUXngctvk3J31WBiW1v07Nlgx5jFlyIOs";
+    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1oBetbe44z2lUXngctvk3J31WBiWTv07NIgx5jFlylOs";
     clearCache(holdSpreadsheetId);
 
     res.json({
@@ -402,7 +504,7 @@ router.post("/release-hold", async (req, res, next) => {
       });
     }
 
-    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1uBelbe44z2lUXngctvk3J31WBiW1v07Nlgx5jFlyIOs";
+    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1oBetbe44z2lUXngctvk3J31WBiWTv07NIgx5jFlylOs";
     clearCache(holdSpreadsheetId);
 
     res.json({
@@ -426,7 +528,7 @@ router.get("/department-data", async (req, res, next) => {
     const { department = "KajButton", refresh } = req.query;
     const forceRefresh = refresh === "true" || refresh === "1";
     const dailyStitchingSpreadsheetId = config.spreadsheetIds.dailyStitching || "1IMhmYlJ3s2PPRgEQs1Ikd4O1OBXK4EYL1oV_-kWAkyg";
-    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1uBelbe44z2lUXngctvk3J31WBiW1v07Nlgx5jFlyIOs";
+    const holdSpreadsheetId = config.spreadsheetIds.holdLots || "1oBetbe44z2lUXngctvk3J31WBiWTv07NIgx5jFlylOs";
 
     const normKey = (s) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -578,6 +680,7 @@ router.get("/department-data", async (req, res, next) => {
     const compIdx = findCol(headers, ["complete", "completed", "completion date", "kajbutton complete", "overlock complete", "feed up complete", "feed up completed", "feedup complete", "feedup completed", "feed up completion date", "folding complete", "embroidery complete", "printing complete", "washing complete", "elastic complete"]);
     const wipIdx = findCol(headers, ["wip", "wip status", "remarks", "wip kajbutton", "wip overlock", "wip feed up", "wip feedup", "feed up wip", "wip folding", "wip jaybir embroidery", "wip jaybir printing", "wip washing", "wip elastic"]);
     const supIdx = findCol(headers, ["supervisor", "kajbutton supervisor", "overlock supervisor", "feed up supervisor", "feedup supervisor", "folding supervisor", "embroidery supervisor", "printing supervisor", "washing supervisor", "elastic supervisor"]);
+    const plantIdx = findCol(headers, ["washing plant", "plant", "washing unit", "wash plant", "washing vendor", "vendor", "unit", "washing party", "plant name"]);
     const pcsIdx = findCol(headers, ["total pcs", "pcs", "quantity", "qty"]);
 
     const lots = {};
@@ -592,6 +695,7 @@ router.get("/department-data", async (req, res, next) => {
       const rawComp = compIdx !== -1 && row[compIdx] ? String(row[compIdx]).trim() : "";
       const rawWip = wipIdx !== -1 && row[wipIdx] ? String(row[wipIdx]).trim() : "";
       const supervisor = supIdx !== -1 && row[supIdx] ? String(row[supIdx]).trim() : "";
+      const plant = plantIdx !== -1 && row[plantIdx] ? String(row[plantIdx]).trim() : "";
       const totalPcs = pcsIdx !== -1 && row[pcsIdx] ? parseInt(row[pcsIdx], 10) || 0 : 0;
 
       const completionDate = parseCompDate(rawComp);
@@ -621,6 +725,7 @@ router.get("/department-data", async (req, res, next) => {
         hasIssue,
         issueRemark,
         supervisor,
+        plant,
         totalPcs
       };
     }

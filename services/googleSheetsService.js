@@ -65,10 +65,17 @@ async function getSheetValues(spreadsheetId, range, forceRefresh = false) {
       } catch (error) {
         const isRateLimit = error.response && error.response.status === 429;
         const isNotFound = error.response && (error.response.status === 400 || error.response.status === 404);
+        const isNetworkError = !error.response && (
+          error.code === 'ENOTFOUND' || 
+          error.code === 'ETIMEDOUT' || 
+          error.code === 'ECONNRESET' || 
+          error.code === 'ECONNABORTED' || 
+          error.code === 'EAI_AGAIN'
+        );
 
-        if (isRateLimit && attempts < maxAttempts) {
+        if ((isRateLimit || isNetworkError) && attempts < maxAttempts) {
           const waitTime = attempts * 1500 + Math.floor(Math.random() * 500);
-          console.warn(`[Rate Limit 429] Retrying [${spreadsheetId} - ${range}] in ${waitTime}ms (Attempt ${attempts}/${maxAttempts})...`);
+          console.warn(`[${isNetworkError ? 'Network/DNS Retry' : 'Rate Limit 429'}] Retrying [${spreadsheetId} - ${range}] in ${waitTime}ms (Attempt ${attempts}/${maxAttempts})...`);
           await sleep(waitTime);
           continue;
         }
@@ -94,7 +101,13 @@ async function getSheetValues(spreadsheetId, range, forceRefresh = false) {
           return [];
         }
 
-        throw new Error(`Failed to fetch sheet values: ${error.response?.data?.error?.message || error.message}`);
+        const customError = new Error(
+          isNetworkError
+            ? `Google Sheets Network/DNS Connection Error (${error.code || error.message}). Please check your internet connection.`
+            : `Failed to fetch sheet values: ${error.response?.data?.error?.message || error.message}`
+        );
+        customError.status = isNetworkError ? 503 : (error.response?.status || 500);
+        throw customError;
       }
     }
     return [];

@@ -48,7 +48,11 @@ app.use((req, res, next) => {
 
 // Global Error Handler
 app.use((err, req, res, next) => {
-  console.error("Unhandled Server Error:", err);
+  if (err.status === 503) {
+    console.warn(`[Network Offline / 503] ${err.message}`);
+  } else {
+    console.error("Unhandled Server Error:", err.message || err);
+  }
   res.status(err.status || 500).json({
     success: false,
     error: err.message || "Internal Server Error"
