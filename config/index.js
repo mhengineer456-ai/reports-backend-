@@ -11,6 +11,7 @@ module.exports = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || "development",
   corsOrigin: process.env.CORS_ORIGIN || "*",
+  geminiApiKey: process.env.GEMINI_API_KEY || "",
   googleApiKey: process.env.REACT_APP_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY || "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
   spreadsheetIds: {
     main: process.env.REACT_APP_MAIN_SPREADSHEET_ID || "1Hj3JeJEKB43aYYWv8gk2UhdU6BWuEQfCg5pBlTdBMNA",

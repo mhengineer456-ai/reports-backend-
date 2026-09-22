@@ -80,6 +80,12 @@ async function getSheetValues(spreadsheetId, range, forceRefresh = false) {
           continue;
         }
 
+        // Graceful empty fallback on missing tab or out-of-bounds range (400/404)
+        if (isNotFound) {
+          sheetsCache.set(cacheKey, []);
+          return [];
+        }
+
         console.error(`Google Sheets API Error [${spreadsheetId} - ${range}]:`, error.message);
 
         // Fallback to stale cache if available
@@ -87,12 +93,6 @@ async function getSheetValues(spreadsheetId, range, forceRefresh = false) {
         if (staleData) {
           console.warn(`[Fallback] Serving stale cache for [${spreadsheetId} - ${range}]`);
           return staleData;
-        }
-
-        // Graceful empty fallback on missing tab
-        if (isNotFound) {
-          console.warn(`[Graceful Fallback] Returning empty values for [${spreadsheetId} - ${range}]`);
-          return [];
         }
 
         // Graceful empty fallback on persistent rate limit to avoid breaking UI
